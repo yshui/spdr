@@ -46,7 +46,7 @@ public:
 	}
 
 	/// Get the unique name of the vertex
-	@safe final string name() const
+	@safe string name() const
 	{
 		return name_;
 	}
@@ -428,6 +428,33 @@ auto depUpCast(S : DepIndef!T, T)(S i)
 	return cast(DepIndef!T) i;
 }
 
+/// Compile test const
+final class DepCompConst(alias val) : DepIndef!(typeof(val))
+{
+	import std.conv : to;
+	private Hash hash;
+	static if (is(typeof(val.name)))
+		private enum name_ = "DepCompConst!("~val.name~")";
+	else
+		private enum name_ = "DepCompConst!("~val.to!string~")";
+public:
+	pragma(inline) override string name() const { return name_; }
+	pragma(inline )override Tuple!(Hash, typeof(val)) resolve(ref State)
+	{
+		return tuple(hash, val);
+	}
+	this()
+	{
+		hash = val.calcHash;
+	}
+}
+
+unittest {
+	State s;
+	auto a = new DepCompConst!"Asdf";
+	assert (a.resolve(s)[1] == "Asdf");
+}
+
 ///
 @trusted Hash calcHash(const(string) i)
 {
@@ -473,19 +500,19 @@ unittest
 
 	import std.stdio : writeln;
 
-	auto x = new DepConst!TestT1(TestT1(1, 2));
-	assert(x.nonrecursive_resolve(s) == TestT1(1, 2));
+	auto x = new DepCompConst!(TestT1(1, 2));
+	assert(x.resolve(s)[1] == TestT1(1, 2));
 
 	auto y = new DepConst!TestT1(TestT1(2, 3));
 	assert(y.nonrecursive_resolve(s) == TestT1(2, 3));
 
 	auto z = depTuple(x, y);
-	assert(z.resolve(s)[1][0] == x.nonrecursive_resolve(s));
+	assert(z.resolve(s)[1][0] == x.resolve(s)[1]);
 	assert(z.resolve(s)[1][1] == y.nonrecursive_resolve(s));
 	writeln(z.name);
 
 	auto w = depArray([x, y]);
-	assert(w.resolve(s)[1][0] == x.nonrecursive_resolve(s));
+	assert(w.resolve(s)[1][0] == x.resolve(s)[1]);
 	assert(w.resolve(s)[1][1] == y.nonrecursive_resolve(s));
 
 	auto a = depConst(cast(DepIndef!(TestT1[])) w);
