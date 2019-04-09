@@ -1,0 +1,6 @@
+name "spdr"
+description "SPlendid Dependency Resolver"
+authors "Yuxuan Shui"
+copyright "Copyright © 2019, Yuxuan Shui"
+license "MIT"
+targetType "sourceLibrary"

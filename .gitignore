@@ -1,0 +1,15 @@
+.dub
+docs.json
+__dummy.html
+docs/
+/spdr
+spdr.so
+spdr.dylib
+spdr.dll
+spdr.a
+spdr.lib
+spdr-test-*
+*.exe
+*.o
+*.obj
+*.lst
