@@ -1,5 +1,8 @@
 module spdr.core.command;
 import spdr.core.base;
+import spdr.core.file;
+import std.typecons : Tuple;
+
 ///
 struct CommandResult
 {
@@ -8,32 +11,63 @@ struct CommandResult
 }
 
 /// Represents a command that need to be run
-final class DepCommand : DepValue!CommandResult
+final class DepCommand : Dep!(CommandResult, Tuple!(File, string[]))
 {
-private:
-	CommandResult result;
-	DepValue!(string[]) _command;
-
-public:
-	override void resolve(ref State s)
+protected:
+	override CommandResult nonrecursive_resolve(ref State s, Tuple!(File, string[]) args)
 	{
-		import std.digest.sha : SHA256, makeDigest;
-		auto cmd = _command.get();
-		auto sha = makeDigest!SHA256;
-		foreach(a; cmd) {
-			sha.put(cast(const(ubyte[]))a);
-		}
+		auto exe = args[0].filename;
+		auto cmd = args[1];
+		CommandResult result;
 
 		import std.process : spawnProcess, wait;
-		auto pid = spawnProcess(cmd);
+
+		auto pid = spawnProcess(exe ~ cmd);
 		result.exit_code = pid.wait;
-		sha.put(cast(ubyte[])[result.exit_code]);
-		set_hash(s, sha.finish());
+		return result;
+	}
+
+	final class DepCommandArgs : Dep!(string[], Tuple!(File, string[]))
+	{
+	protected:
+		override string[] nonrecursive_resolve(ref State s, Tuple!(File, string[]) args)
+		{
+			return args[0].filename ~ args[1];
+		}
+
+		mixin DepCtor!(Tuple!(File, string[]));
 	}
 
 	///
-	@property const(DepValue!(string[])) command() const
+	@property auto command_args()
 	{
-		return _command;
+		return new DepCommandArgs(dep);
 	}
+
+	mixin DepCtor!(Tuple!(File, string[]));
+}
+
+unittest
+{
+	State s;
+	{
+		auto args = depConst(["-l"]);
+		auto exename = depConst("/usr/bin/ls");
+		auto exe = new DepFile(exename);
+		auto cmd = new DepCommand(depTuple(exe, args));
+		cmd.resolve(s);
+		import std.stdio : writeln;
+
+		writeln(cmd.name);
+		writeln(s.cache);
+	}
+
+	// Construct same set of variables again
+	auto args = depConst(["-l"]);
+	auto exename = depConst("/usr/bin/ls");
+	auto exe = new DepFile(exename);
+	auto cmd = new DepCommand(depTuple(exe, args));
+
+	// Test deserialization from persistent store
+	cmd.resolve(s);
 }

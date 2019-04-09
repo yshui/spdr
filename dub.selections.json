@@ -1,0 +1,7 @@
+{
+	"fileVersion": 1,
+	"versions": {
+		"asdf": "0.4.5",
+		"msgpack-d": "~master"
+	}
+}
