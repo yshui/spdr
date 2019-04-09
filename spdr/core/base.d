@@ -11,7 +11,8 @@ import asdf.serialization : serializeToJson, asdfDeserialize = deserialize;
 struct State
 {
 	///
-	struct CacheEntry {
+	struct CacheEntry
+	{
 		/// Whether this entry should be persisted
 		bool persistent;
 		///
@@ -60,6 +61,22 @@ public:
 	}
 }
 
+///
+template DepBinOp(T, string op, S)
+if (is(typeof(mixin("T.init" ~ op ~ "S.init"))))
+{
+alias Res = typeof(mixin("T.init"~op~"S.init"));
+final static class DepBinOp :  Dep!(Res, Tuple!(T, S)) {
+protected:
+	override @safe Res nonrecursive_resolve(ref State s, Tuple!(T, S) operands)
+	{
+		return mixin("operands[0]" ~ op ~ "operands[1]");
+	}
+
+	mixin DepCtor!(Tuple!(T, S));
+}
+}
+
 /// A vertex that returns value of type V, with indefinite dependencies
 abstract class DepIndef(V) : DepVertex
 {
@@ -69,6 +86,22 @@ public:
 	/// Returns a tuple of: 1) hash of the output, and 2) a value of type V.
 	/// Note a vertex can always report itself as changed if it doesn't have cached results to compare with.
 	@safe abstract Tuple!(Hash, V) resolve(ref State);
+
+	DepIndef!V opBinary(string op, W)(DepIndef!W rhs) {
+		return new DepBinOp!(V, op, W)(depTuple(this, rhs));
+	}
+	override string toString() {
+		return name;
+	}
+}
+
+unittest {
+	auto a = "asdf".depConst, b = "qwer".depConst;
+	auto c = a.opBinary!"~"(b);
+
+	State s;
+	import std.stdio;
+	writeln(c.resolve(s));
 }
 
 private mixin template DepBase(bool impure, V, D...) if (D.length == 0 || D.length == 1)
@@ -92,33 +125,62 @@ private mixin template DepBase(bool impure, V, D...) if (D.length == 0 || D.leng
 	}
 	@trusted override Tuple!(Hash, V) resolve(ref State s)
 	{
-		debug {
+		debug
+		{
 			import std.stdio : writeln;
+
 			writeln("Resolving ", name);
 		}
-		static if (is(typeof(V.init.serializeToJson))) {
-			debug pragma(msg, V.stringof~" is serializable");
-			struct SerializeT {
+		static if (is(typeof(V.init.serializeToJson)))
+		{
+			debug pragma(msg, V.stringof ~ " is serializable");
+			struct SerializeT
+			{
 				Hash hash;
+				static if (impure && D.length == 1)
+				{
+					// In case of impure vertices, there are two distinct hashes
+					Hash input_hash;
+				}
 				V val;
 			}
-			static assert (is(typeof(asdfDeserialize!SerializeT(""))));
-			if (cached.isNull && name in s.cache) {
+
+			debug if (name in s.cache)
+			{
+				writeln(name, " found in cache");
+			}
+			if (cached.isNull && name in s.cache)
+			{
+				debug writeln("Restoring");
 				auto dser = asdfDeserialize!SerializeT(s.cache[name].data);
 				hash = dser.hash;
 				cached = dser.val;
+				static if (impure && D.length == 1)
+				{
+					input_hash = dser.input_hash;
+				}
 			}
-		} else {
-			debug pragma(msg, V.stringof~" is not serializable");
+		}
+		else
+		{
+			debug pragma(msg, V.stringof ~ " is not serializable");
 		}
 
 		auto tmp = resolveImpl(s);
 
-		static if (is(typeof(V.init.serializeToJson))) {
-			SerializeT ser = SerializeT(tmp[0], tmp[1]);
+		static if (is(typeof(V.init.serializeToJson)))
+		{
+			static if (impure && D.length == 1)
+			{
+				SerializeT ser = SerializeT(hash, input_hash, tmp);
+			}
+			else
+			{
+				SerializeT ser = SerializeT(hash, tmp);
+			}
 			s.cache[name] = State.CacheEntry(!impure, ser.serializeToJson);
 		}
-		return tmp;
+		return tuple(hash, tmp);
 	}
 }
 
@@ -128,20 +190,22 @@ private mixin template DepBase(bool impure, V, D...) if (D.length == 0 || D.leng
 abstract class DepImpure(V, D...) : DepIndef!V if (D.length == 0 || D.length == 1)
 {
 private:
-	Hash hash; // The "input hash", created from hashes of dep
+	Hash input_hash; // The "input hash", created from hashes of dep
+	Hash hash; // The "output hash"
 	Nullable!V cached;
 protected:
 	/// Resolve this vertex itself assuming all its dependencies have been resolved
 	@safe abstract Tuple!(Hash, V) nonrecursive_resolve(ref State, D);
 
-	@safe Tuple!(Hash, V) resolveImpl(ref State s)
+	@safe V resolveImpl(ref State s)
 	{
 		static if (D.length == 1)
 		{
 			auto real_dep = dep.resolve(s);
 			auto real_val = real_dep[1].resolve(s);
-			if (cached.isNull || real_val[0] != hash)
+			if (cached.isNull || real_val[0] != input_hash)
 			{
+				input_hash = real_val[0];
 				auto tmp = nonrecursive_resolve(s, real_val[1]);
 				hash = tmp[0];
 				cached = tmp[1];
@@ -156,7 +220,7 @@ protected:
 				cached = tmp[1];
 			}
 		}
-		return tuple(hash, cached.get);
+		return cached.get;
 	}
 
 public:
@@ -180,7 +244,7 @@ protected:
 				~ " doesn't define an appropriate hash interface");
 	}
 
-	@safe Tuple!(Hash, V) resolveImpl(ref State s)
+	@safe V resolveImpl(ref State s)
 	{
 		static if (D.length == 1)
 		{
@@ -200,7 +264,7 @@ protected:
 				hash = cached.calcHash();
 			}
 		}
-		return tuple(hash, cached.get);
+		return cached.get;
 	}
 
 public:
@@ -216,7 +280,7 @@ mixin template DepCtor(D...)
 		public @safe this(DepIndef!(DepIndef!D) d)
 		{
 			super(d);
-			this.name_ = typeof(this).stringof~"("~d.name~")";
+			this.name_ = typeof(this).stringof ~ "(" ~ d.name ~ ")";
 		}
 
 		public @safe this(DepIndef!D d)
@@ -246,7 +310,17 @@ public:
 		import std.format : format;
 
 		val = v;
-		name_ = format!("DepConst!(" ~ T.stringof ~ ")(%s)")(val);
+
+		string inner_name;
+		static if (is(typeof(val.name)))
+		{
+			inner_name = val.name;
+		} else
+		{
+			import std.conv : to;
+			inner_name = val.to!string;
+		}
+		name_ = format!("DepConst!(" ~ T.stringof ~ ")(%s)")(inner_name);
 	}
 
 	override string toString() const
@@ -291,7 +365,7 @@ public:
 		import std.conv : to;
 
 		deps = Tuple!S(_deps);
-		name_ = "DepTuple!(" ~ S.stringof ~ ")(" ~ deps.to!string ~ ")";
+		name_ = "DepTuple!(" ~ S.stringof ~ ")(" ~ [_deps].to!string ~ ")";
 	}
 
 	override string toString() const

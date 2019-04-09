@@ -73,8 +73,14 @@ unittest
 
 	auto exename = depConst("/usr/bin/ls");
 	auto exe = new DepFile(exename);
+	auto exe2 = new DepFile(exename);
 	State s;
 	auto v = exe.resolve(s);
 	writeln(v);
+
+	writeln(s);
 	writeln(exe.resolve(s));
+
+	writeln("ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ");
+	exe2.resolve(s);
 }
