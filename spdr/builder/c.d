@@ -7,9 +7,9 @@ final class C : BuilderBase {
 	mixin BuilderBaseMixin;
 protected:
 	/// Include directories, has to be absolute path
-	DepIndef!string[] includeDirs;
+	TaskBase!string[] includeDirs;
 	/// Library directories, has to be absolute path
-	DepIndef!string[] libraryDirs;
+	TaskBase!string[] libraryDirs;
 
 	void copyTo(C other) {
 		other.includeDirs = includeDirs;

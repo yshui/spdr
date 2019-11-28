@@ -5,13 +5,13 @@ import spdr.core.file;
 /// Mixin template for Builders
 mixin template BuilderBaseMixin() {
 protected:
-	this(string src, DepIndef!string o) {
+	this(string src, TaskBase!string o) {
 		sourceDir = src;
 		outputDir = o;
 	}
 public:
 	typeof(this) cd(string dirname) {
-		auto ret = new typeof(this)(sourceDir ~ dirname, outputDir ~ dirname.depConst);
+		auto ret = new typeof(this)(sourceDir ~ dirname, outputDir ~ dirname.toConstTask);
 		copyTo(ret);
 		return ret;
 	}
@@ -22,10 +22,10 @@ public:
 		spdr(b);
 	}
 
-	this(DepIndef!string o) {
+	this(TaskBase!string o) {
 		import std.file : getcwd;
 		auto cwd = getcwd ~ "/";
-		this(cwd, cwd.depConst ~ o);
+		this(cwd, cwd.toConstTask ~ o);
 	}
 
 	this(BuilderBase o) {
@@ -38,15 +38,15 @@ public:
 abstract class BuilderBase {
 public:
 	string sourceDir;
-	DepIndef!string outputDir;
+	TaskBase!string outputDir;
 
 	/// Get the path to a source file
-	DepIndef!string srcFile(DepIndef!string filename) {
-		return sourceDir.depConst ~ filename;
+	TaskBase!string srcFile(TaskBase!string filename) {
+		return sourceDir.toConstTask ~ filename;
 	}
 
 	/// Get the path to an output file
-	DepIndef!string outFile(DepIndef!string filename) {
+	TaskBase!string outFile(TaskBase!string filename) {
 		return outputDir ~ filename;
 	}
 }
@@ -56,6 +56,6 @@ unittest {
 		mixin BuilderBaseMixin;
 		void copyTo(BuilderTest) {}
 	}
-	auto b = new BuilderTest(".".depConst);
+	auto b = new BuilderTest(".".toConstTask);
 	b.subdir!"test";
 }

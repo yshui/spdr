@@ -2,7 +2,7 @@ module spdr.core.persist;
 
 import spdr.core.base;
 import asdf.serialization : serializeToJson, deserialize;
-
+version(none):
 ///
 void persistToFile(alias Serialize)(ref State s, string filename)
 		if (is(typeof(Serialize(s)) == ubyte[]))

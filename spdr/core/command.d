@@ -10,64 +10,80 @@ struct CommandResult
 	int exit_code;
 }
 
-/// Represents a command that need to be run
-final class DepCommand : Dep!(CommandResult, Tuple!(File, string[]))
+final class CommandArgs : TaskBase!(string[])
 {
 protected:
-	override CommandResult nonrecursive_resolve(ref State s, Tuple!(File, string[]) args)
+	string[] value_;
+public:
+	override void resolve()
 	{
-		auto exe = args[0].filename;
-		auto cmd = args[1];
+		value_ = dep.value.value[0].filename ~ dep.value.value[1].dup;
+	}
+
+	override ref const(Hash) hash() const in (resolved) {
+		return dep.value.hash;
+	}
+
+	override inout(string[]) value() inout in (resolved) {
+		return value_;
+	}
+
+	mixin DependentTaskMixin!(Tuple!(File, string[]));
+}
+
+/// Represents a command that need to be run
+final class Command : TaskBase!CommandResult
+{
+protected:
+	CommandResult value_;
+public:
+	override void resolve()
+	{
+		auto exe = dep.value.value[0].filename;
+		auto cmd = dep.value.value[1];
 		CommandResult result;
 
 		import std.process : spawnProcess, wait;
 
 		auto pid = spawnProcess(exe ~ cmd);
 		result.exit_code = pid.wait;
-		return result;
+		resolved_ = true;
 	}
 
-	final class DepCommandArgs : Dep!(string[], Tuple!(File, string[]))
-	{
-	protected:
-		override string[] nonrecursive_resolve(ref State s, Tuple!(File, string[]) args)
-		{
-			return args[0].filename ~ args[1];
-		}
+	override inout(CommandResult) value() inout in (resolved) {
+		return value_;
+	}
 
-		mixin DepCtor!(Tuple!(File, string[]));
+	override ref const(Hash) hash() const in (resolved) {
+		return dep.hash;
 	}
 
 	///
 	@property auto command_args()
 	{
-		return new DepCommandArgs(dep);
+		return new CommandArgs(dep);
 	}
 
-	mixin DepCtor!(Tuple!(File, string[]));
+	mixin DependentTaskMixin!(Tuple!(File, string[]));
 }
 
 unittest
 {
-	State s;
 	{
-		auto args = depConst(["-l"]);
-		auto exename = depConst("/usr/bin/ls");
-		auto exe = new DepFile(exename);
-		auto cmd = new DepCommand(depTuple(exe, args));
-		cmd.resolve(s);
+		import spdr.core.base : recursivelyResolve;
+		auto args = ["-l"].toConstTask;
+		auto exename = "/usr/bin/ls".toConstTask;
+		auto exe = new ExternalFile(exename);
+		auto cmd = new Command(taskJoin(exe, args));
+
+		cmd.recursivelyResolve;
 		import std.stdio : writeln;
 
 		writeln(cmd.name);
-		writeln(s.cache);
 	}
 
 	// Construct same set of variables again
-	auto args = depConst(["-l"]);
-	auto exename = depConst("/usr/bin/ls");
-	auto exe = new DepFile(exename);
-	auto cmd = new DepCommand(depTuple(exe, args));
+	// TODO
 
 	// Test deserialization from persistent store
-	cmd.resolve(s);
 }
